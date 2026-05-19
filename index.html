@@ -46,6 +46,11 @@
     </aside>
 
     <main class="notebook">
+      <header class="editor-head">
+        <button class="soft mobile-back" id="backToList" type="button">Назад</button>
+        <strong id="editorTitle">Новая запись</strong>
+        <span id="saveState">Сохранено</span>
+      </header>
       <section class="note-card">
         <div class="note-top">
           <input type="date" id="reportDate">
@@ -80,7 +85,6 @@
       <section class="actions">
         <button id="saveReport">Сохранить</button>
         <button class="soft" id="exportExcel">Excel</button>
-        <button class="soft" id="shareCurrent">Поделиться входом</button>
         <button class="danger" id="deleteReport">Удалить</button>
       </section>
       <div class="status" id="status"></div>

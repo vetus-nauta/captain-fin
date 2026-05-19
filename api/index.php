@@ -12,7 +12,7 @@ session_set_cookie_params([
 ]);
 session_start();
 
-const APP_VERSION = '2026.05.19-captain-fin-002';
+const APP_VERSION = '2026.05.19-captain-fin-004';
 const AUTH_BASE = 'https://brkovic.ltd/api';
 const STORAGE_DIR = __DIR__ . '/../storage';
 const REPORTS_DIR = STORAGE_DIR . '/reports';
@@ -246,7 +246,7 @@ function xml_escape(mixed $value): string {
 }
 
 function make_xlsx(array $report): string {
-    if (!class_exists('ZipArchive')) fail('На сервере нет ZipArchive для Excel export', 500);
+    if (!class_exists('ZipArchive')) return make_excel_html($report);
     $dir = year_dir(EXPORTS_DIR, $report['report_date']);
     $path = $dir . '/report-' . $report['report_date'] . '-' . $report['id'] . '.xlsx';
     $rows = [
@@ -286,6 +286,33 @@ function make_xlsx(array $report): string {
     $zip->addFromString('xl/_rels/workbook.xml.rels', '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>');
     $zip->addFromString('xl/worksheets/sheet1.xml', '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' . $sheetRows . '</sheetData></worksheet>');
     $zip->close();
+    duplicate_to_drive($path);
+    return $path;
+}
+
+function make_excel_html(array $report): string {
+    $dir = year_dir(EXPORTS_DIR, $report['report_date']);
+    $path = $dir . '/report-' . $report['report_date'] . '-' . $report['id'] . '.xls';
+    $names = ['income' => 'Приход', 'expense' => 'Расход', 'upcoming' => 'Будущий расход'];
+    $rows = '';
+    foreach ($report['entries'] as $entry) {
+        $amount = (float) $entry['amount'];
+        if ($entry['type'] !== 'income') $amount = -$amount;
+        $rows .= '<tr><td>' . xml_escape($names[$entry['type']] ?? $entry['type']) . '</td><td>'
+            . xml_escape($entry['description']) . '</td><td>' . $amount . '</td><td>'
+            . xml_escape($entry['entry_date']) . '</td></tr>';
+    }
+    $html = '<html><head><meta charset="utf-8"></head><body>'
+        . '<h1>Captain Fin</h1>'
+        . '<table border="1">'
+        . '<tr><th>Дата</th><td>' . xml_escape($report['report_date']) . '</td></tr>'
+        . '<tr><th>Остаток</th><td>' . (float) $report['opening_balance'] . '</td></tr>'
+        . '<tr><th>Пришло</th><td>' . (float) $report['computed']['income'] . '</td></tr>'
+        . '<tr><th>Ушло</th><td>' . (float) $report['computed']['expense'] . '</td></tr>'
+        . '<tr><th>Будущий остаток</th><td>' . (float) $report['computed']['future'] . '</td></tr>'
+        . '</table><br><table border="1"><tr><th>Статья</th><th>Описание</th><th>Сумма</th><th>Дата</th></tr>'
+        . $rows . '</table></body></html>';
+    file_put_contents($path, $html, LOCK_EX);
     duplicate_to_drive($path);
     return $path;
 }
@@ -334,7 +361,24 @@ if ($action === 'export') {
     $report = find_report((string) ($payload['id'] ?? ''));
     if (!$report) fail('Отчет не найден', 404);
     $path = make_xlsx($report);
-    respond(['path' => str_replace(__DIR__ . '/..', '.', $path)]);
+    $file = basename(dirname($path)) . '/' . basename($path);
+    respond(['path' => './storage/exports/' . $file, 'url' => 'api/?action=download&file=' . rawurlencode($file)]);
+}
+if ($action === 'download') {
+    $file = (string) ($_GET['file'] ?? '');
+    if (!preg_match('#^\d{4}/[A-Za-z0-9._-]+\.(xlsx|xls)$#', $file)) fail('Некорректный файл', 400);
+    $path = EXPORTS_DIR . '/' . $file;
+    if (!is_file($path)) fail('Файл не найден', 404);
+    $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+    $type = $ext === 'xlsx'
+        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        : 'application/vnd.ms-excel';
+    header('Content-Type: ' . $type);
+    header('Content-Disposition: attachment; filename="' . basename($path) . '"');
+    header('Content-Length: ' . filesize($path));
+    header('X-Robots-Tag: noindex, nofollow, noarchive');
+    readfile($path);
+    exit;
 }
 if ($action === 'export-json') respond(['version' => APP_VERSION, 'reports' => all_reports()]);
 

@@ -1,4 +1,4 @@
-const APP_VERSION = '2026.05.19-captain-fin-002';
+const APP_VERSION = '2026.05.19-captain-fin-004';
 const PUBLIC_WEB_APP_URL = 'https://brkovic.ltd/captain-fin/';
 const DRIVE_FOLDER_URL = 'https://drive.google.com/drive/folders/1x9m41AUYPocx7H0UezF_lZnFvzWO54zQ?usp=sharing';
 const $ = (id) => document.getElementById(id);
@@ -6,6 +6,9 @@ const money = (n) => Number(n || 0).toLocaleString('ru-RU', { minimumFractionDig
 
 let reports = [];
 let selectedId = null;
+let saveTimer = null;
+let isSaving = false;
+let isHydrating = false;
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -23,6 +26,7 @@ async function api(action, options = {}) {
 }
 
 function blankReport() {
+  isHydrating = true;
   selectedId = null;
   $('reportDate').value = today();
   $('openingBalance').value = '';
@@ -30,6 +34,8 @@ function blankReport() {
   $('submitted').checked = false;
   $('entries').innerHTML = '';
   addEntry('income');
+  showEditor();
+  isHydrating = false;
   updateAll();
   renderList();
 }
@@ -93,6 +99,9 @@ function updateAll() {
     ['Предстоящие', c.upcoming],
     ['Будущий остаток', c.future]
   ].map(([label, value]) => `<div class="metric"><span>${label}</span><strong>${money(value)}</strong></div>`).join('');
+  const title = $('notes').value.trim().split('\n').find(Boolean) || $('reportDate').value || 'Новая запись';
+  $('editorTitle').textContent = title.slice(0, 48);
+  if (!isHydrating) scheduleAutosave();
 }
 
 function parseSignedItems(text) {
@@ -127,6 +136,10 @@ function importSignedInput() {
 function renderList() {
   const q = $('search').value.toLowerCase().trim();
   const list = reports.filter((r) => !q || JSON.stringify(r).toLowerCase().includes(q));
+  if (!list.length) {
+    $('reportList').innerHTML = '<div class="empty-list">Нет записей. Нажмите +, чтобы начать новый отчет.</div>';
+    return;
+  }
   $('reportList').innerHTML = list.map((r) => {
     const c = r.computed || {};
     const active = r.id === selectedId ? 'active' : '';
@@ -151,6 +164,7 @@ async function loadReports() {
 }
 
 async function selectReport(id) {
+  isHydrating = true;
   const report = await api(`report&id=${id}`);
   selectedId = report.id;
   $('reportDate').value = report.report_date;
@@ -160,16 +174,50 @@ async function selectReport(id) {
   $('entries').innerHTML = '';
   report.entries.forEach((entry) => addEntry(entry.type, entry));
   if (!report.entries.length) addEntry('income');
+  showEditor();
+  isHydrating = false;
   updateAll();
   renderList();
 }
 
 async function saveReport() {
-  const saved = await api('save', { method: 'POST', body: JSON.stringify(collectReport()) });
-  selectedId = saved.id;
-  reports = await api('reports');
-  await selectReport(selectedId);
-  setStatus('Сохранено.');
+  if (isSaving) return;
+  isSaving = true;
+  $('saveState').textContent = 'Сохранение...';
+  try {
+    const saved = await api('save', { method: 'POST', body: JSON.stringify(collectReport()) });
+    selectedId = saved.id;
+    reports = await api('reports');
+    await selectReport(selectedId);
+    $('saveState').textContent = 'Сохранено';
+    setStatus('Сохранено.');
+  } finally {
+    isSaving = false;
+  }
+}
+
+function scheduleAutosave() {
+  if (!$('appShell') || $('appShell').classList.contains('hidden')) return;
+  if (!$('appShell').classList.contains('mobile-editor') && window.matchMedia('(max-width: 920px)').matches) return;
+  clearTimeout(saveTimer);
+  $('saveState').textContent = 'Есть изменения';
+  saveTimer = setTimeout(() => saveReport().catch((error) => setStatus(error.message)), 1400);
+}
+
+async function saveAndShowList() {
+  clearTimeout(saveTimer);
+  await saveReport();
+  showList();
+}
+
+function showList() {
+  $('appShell').classList.add('mobile-list');
+  $('appShell').classList.remove('mobile-editor');
+}
+
+function showEditor() {
+  $('appShell').classList.add('mobile-editor');
+  $('appShell').classList.remove('mobile-list');
 }
 
 async function deleteReport() {
@@ -184,9 +232,11 @@ async function deleteReport() {
 }
 
 async function exportExcel() {
-  if (!selectedId) await saveReport();
+  clearTimeout(saveTimer);
+  if (!selectedId || $('saveState').textContent !== 'Сохранено') await saveReport();
   const result = await api('export', { method: 'POST', body: JSON.stringify({ id: selectedId }) });
   setStatus(`Excel создан: ${result.path}`);
+  if (result.url) window.open(result.url, '_blank', 'noopener,noreferrer');
 }
 
 function openShareSheet() {
@@ -259,11 +309,11 @@ document.addEventListener('input', (event) => {
 document.querySelectorAll('[data-add]').forEach((button) => button.addEventListener('click', () => addEntry(button.dataset.add)));
 $('newReport').addEventListener('click', blankReport);
 $('saveReport').addEventListener('click', () => saveReport().catch((error) => setStatus(error.message)));
+$('backToList').addEventListener('click', () => saveAndShowList().catch((error) => setStatus(error.message)));
 $('deleteReport').addEventListener('click', () => deleteReport().catch((error) => setStatus(error.message)));
 $('exportExcel').addEventListener('click', () => exportExcel().catch((error) => setStatus(error.message)));
 $('importSigned').addEventListener('click', importSignedInput);
 $('shareWebApp').addEventListener('click', openShareSheet);
-$('shareCurrent').addEventListener('click', openShareSheet);
 $('syncLocal').addEventListener('click', () => copyPublicLink().catch((error) => setStatus(error.message)));
 $('closeShare').addEventListener('click', closeShareSheet);
 $('closeShareBackdrop').addEventListener('click', closeShareSheet);
