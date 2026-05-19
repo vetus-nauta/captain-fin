@@ -12,7 +12,7 @@ session_set_cookie_params([
 ]);
 session_start();
 
-const APP_VERSION = '2026.05.19-captain-fin-006';
+const APP_VERSION = '2026.05.19-captain-fin-007';
 const AUTH_BASE = 'https://brkovic.ltd/api';
 const STORAGE_DIR = __DIR__ . '/../storage';
 const REPORTS_DIR = STORAGE_DIR . '/reports';
@@ -245,46 +245,133 @@ function xml_escape(mixed $value): string {
     return htmlspecialchars((string) $value, ENT_XML1 | ENT_QUOTES, 'UTF-8');
 }
 
+function xlsx_cell(string $ref, mixed $value, int $style = 0): string {
+    $styleAttr = $style > 0 ? ' s="' . $style . '"' : '';
+    if (is_int($value) || is_float($value)) {
+        return '<c r="' . $ref . '"' . $styleAttr . '><v>' . $value . '</v></c>';
+    }
+    return '<c r="' . $ref . '"' . $styleAttr . ' t="inlineStr"><is><t>' . xml_escape($value) . '</t></is></c>';
+}
+
+function xlsx_row(int $row, array $cells, ?float $height = null): string {
+    $heightAttr = $height ? ' ht="' . $height . '" customHeight="1"' : '';
+    $xml = '<row r="' . $row . '"' . $heightAttr . '>';
+    foreach ($cells as $cell) {
+        [$col, $value, $style] = $cell + [null, null, 0];
+        $xml .= xlsx_cell($col . $row, $value, (int) $style);
+    }
+    return $xml . '</row>';
+}
+
+function xlsx_styles(): string {
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        . '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        . '<numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.00"/></numFmts>'
+        . '<fonts count="4">'
+        . '<font><sz val="11"/><color rgb="FF111827"/><name val="Arial"/></font>'
+        . '<font><b/><sz val="18"/><color rgb="FFFFFFFF"/><name val="Arial"/></font>'
+        . '<font><b/><sz val="11"/><color rgb="FF111827"/><name val="Arial"/></font>'
+        . '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Arial"/></font>'
+        . '</fonts>'
+        . '<fills count="11">'
+        . '<fill><patternFill patternType="none"/></fill>'
+        . '<fill><patternFill patternType="gray125"/></fill>'
+        . '<fill><patternFill patternType="solid"><fgColor rgb="FF111827"/><bgColor indexed="64"/></patternFill></fill>'
+        . '<fill><patternFill patternType="solid"><fgColor rgb="FFF3F4F6"/><bgColor indexed="64"/></patternFill></fill>'
+        . '<fill><patternFill patternType="solid"><fgColor rgb="FFDBEAFE"/><bgColor indexed="64"/></patternFill></fill>'
+        . '<fill><patternFill patternType="solid"><fgColor rgb="FFD1FAE5"/><bgColor indexed="64"/></patternFill></fill>'
+        . '<fill><patternFill patternType="solid"><fgColor rgb="FFFEE2E2"/><bgColor indexed="64"/></patternFill></fill>'
+        . '<fill><patternFill patternType="solid"><fgColor rgb="FFFEF3C7"/><bgColor indexed="64"/></patternFill></fill>'
+        . '<fill><patternFill patternType="solid"><fgColor rgb="FF065F46"/><bgColor indexed="64"/></patternFill></fill>'
+        . '<fill><patternFill patternType="solid"><fgColor rgb="FFEFF6FF"/><bgColor indexed="64"/></patternFill></fill>'
+        . '<fill><patternFill patternType="solid"><fgColor rgb="FFF9FAFB"/><bgColor indexed="64"/></patternFill></fill>'
+        . '</fills>'
+        . '<borders count="2"><border/><border><left style="thin"><color rgb="FFD1D5DB"/></left><right style="thin"><color rgb="FFD1D5DB"/></right><top style="thin"><color rgb="FFD1D5DB"/></top><bottom style="thin"><color rgb="FFD1D5DB"/></bottom></border></borders>'
+        . '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+        . '<cellXfs count="18">'
+        . '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+        . '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"><alignment horizontal="center" vertical="center"/></xf>'
+        . '<xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment vertical="center"/></xf>'
+        . '<xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1"><alignment vertical="center"/></xf>'
+        . '<xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf>'
+        . '<xf numFmtId="164" fontId="2" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="right" vertical="center"/></xf>'
+        . '<xf numFmtId="164" fontId="2" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="right" vertical="center"/></xf>'
+        . '<xf numFmtId="164" fontId="2" fillId="6" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="right" vertical="center"/></xf>'
+        . '<xf numFmtId="164" fontId="2" fillId="7" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="right" vertical="center"/></xf>'
+        . '<xf numFmtId="164" fontId="3" fillId="8" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="right" vertical="center"/></xf>'
+        . '<xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf>'
+        . '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment vertical="top" wrapText="1"/></xf>'
+        . '<xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"><alignment horizontal="right" vertical="top"/></xf>'
+        . '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment horizontal="center" vertical="top"/></xf>'
+        . '<xf numFmtId="164" fontId="0" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1"><alignment horizontal="right" vertical="top"/></xf>'
+        . '<xf numFmtId="164" fontId="0" fillId="6" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1"><alignment horizontal="right" vertical="top"/></xf>'
+        . '<xf numFmtId="164" fontId="0" fillId="7" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1"><alignment horizontal="right" vertical="top"/></xf>'
+        . '<xf numFmtId="0" fontId="0" fillId="10" borderId="1" xfId="0" applyFill="1" applyBorder="1"><alignment vertical="top" wrapText="1"/></xf>'
+        . '</cellXfs>'
+        . '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
+        . '</styleSheet>';
+}
+
 function make_xlsx(array $report): string {
     if (!class_exists('ZipArchive')) return make_excel_html($report);
     $dir = year_dir(EXPORTS_DIR, $report['report_date']);
     $path = $dir . '/report-' . $report['report_date'] . '-' . $report['id'] . '.xlsx';
-    $rows = [
-        ['Captain Fin', '', '', ''],
-        ['Дата', $report['report_date'], '', ''],
-        ['Остаток', $report['opening_balance'], '', ''],
-        ['Пришло', $report['computed']['income'], '', ''],
-        ['Ушло', -$report['computed']['expense'], '', ''],
-        ['Будущий остаток', $report['computed']['future'], '', ''],
-        [],
-        ['Статья', 'Описание', 'Сумма', 'Дата'],
-    ];
+    $generated = date('Y-m-d H:i');
+    $current = (float) $report['computed']['current'];
+    $future = (float) $report['computed']['future'];
+    $notes = trim((string) ($report['notes'] ?? ''));
+    $sheetRows = '';
+    $sheetRows .= xlsx_row(1, [['A', 'CAPTAIN FIN · ФИНАНСОВЫЙ ОТЧЕТ', 1]], 28);
+    $sheetRows .= xlsx_row(3, [['A', 'Дата отчета', 2], ['B', $report['report_date'], 3], ['D', 'Сформировано', 2], ['E', $generated, 3]]);
+    $sheetRows .= xlsx_row(5, [['A', 'БЫЛО', 4], ['B', 'ПРИХОД', 4], ['C', 'РАСХОД', 4], ['D', 'СТАЛО', 4], ['E', 'БУДЕТ', 4]]);
+    $sheetRows .= xlsx_row(6, [
+        ['A', (float) $report['opening_balance'], 5],
+        ['B', (float) $report['computed']['income'], 6],
+        ['C', -(float) $report['computed']['expense'], 7],
+        ['D', $current, 9],
+        ['E', $future, 8],
+    ], 26);
+    $sheetRows .= xlsx_row(8, [['A', 'Строки отчета', 4], ['B', '', 4], ['C', '', 4], ['D', '', 4], ['E', '', 4]]);
+    $sheetRows .= xlsx_row(9, [['A', 'Тип', 10], ['B', 'Описание', 10], ['C', 'Сумма', 10], ['D', 'Дата', 10], ['E', 'Комментарий', 10]]);
     $names = ['income' => 'Приход', 'expense' => 'Расход', 'upcoming' => 'Будущий расход'];
+    $entryRow = 10;
     foreach ($report['entries'] as $entry) {
         $amount = (float) $entry['amount'];
         if ($entry['type'] !== 'income') $amount = -$amount;
-        $rows[] = [$names[$entry['type']] ?? $entry['type'], $entry['description'], $amount, $entry['entry_date']];
+        $moneyStyle = $entry['type'] === 'income' ? 14 : ($entry['type'] === 'upcoming' ? 16 : 15);
+        $sheetRows .= xlsx_row($entryRow, [
+            ['A', $names[$entry['type']] ?? $entry['type'], 11],
+            ['B', $entry['description'], 11],
+            ['C', $amount, $moneyStyle],
+            ['D', $entry['entry_date'], 13],
+            ['E', '', 11],
+        ], 22);
+        $entryRow++;
     }
-    $sheetRows = '';
-    foreach ($rows as $r => $row) {
-        $sheetRows .= '<row r="' . ($r + 1) . '">';
-        foreach ($row as $c => $value) {
-            $ref = chr(65 + $c) . ($r + 1);
-            if (is_int($value) || is_float($value)) {
-                $sheetRows .= '<c r="' . $ref . '"><v>' . $value . '</v></c>';
-            } else {
-                $sheetRows .= '<c r="' . $ref . '" t="inlineStr"><is><t>' . xml_escape($value) . '</t></is></c>';
-            }
-        }
-        $sheetRows .= '</row>';
-    }
+    $noteRow = max($entryRow + 1, 12);
+    $sheetRows .= xlsx_row($noteRow, [['A', 'Заметки', 10], ['B', '', 10], ['C', '', 10], ['D', '', 10], ['E', '', 10]]);
+    $sheetRows .= xlsx_row($noteRow + 1, [['A', $notes !== '' ? $notes : 'Без заметок', 17]], 70);
+    $dimensionEnd = 'E' . ($noteRow + 1);
+    $sheetXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        . '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>'
+        . '<dimension ref="A1:' . $dimensionEnd . '"/>'
+        . '<sheetViews><sheetView workbookViewId="0" showGridLines="0"/></sheetViews>'
+        . '<cols><col min="1" max="1" width="18" customWidth="1"/><col min="2" max="2" width="42" customWidth="1"/><col min="3" max="3" width="16" customWidth="1"/><col min="4" max="4" width="16" customWidth="1"/><col min="5" max="5" width="24" customWidth="1"/></cols>'
+        . '<sheetData>' . $sheetRows . '</sheetData>'
+        . '<mergeCells count="3"><mergeCell ref="A1:E1"/><mergeCell ref="A8:E8"/><mergeCell ref="A' . ($noteRow + 1) . ':E' . ($noteRow + 1) . '"/></mergeCells>'
+        . '<printOptions horizontalCentered="1"/>'
+        . '<pageMargins left="0.35" right="0.35" top="0.55" bottom="0.55" header="0.2" footer="0.2"/>'
+        . '<pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/>'
+        . '</worksheet>';
     $zip = new ZipArchive();
     $zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE);
-    $zip->addFromString('[Content_Types].xml', '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>');
+    $zip->addFromString('[Content_Types].xml', '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>');
     $zip->addFromString('_rels/.rels', '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
-    $zip->addFromString('xl/workbook.xml', '<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Отчет" sheetId="1" r:id="rId1"/></sheets></workbook>');
-    $zip->addFromString('xl/_rels/workbook.xml.rels', '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>');
-    $zip->addFromString('xl/worksheets/sheet1.xml', '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' . $sheetRows . '</sheetData></worksheet>');
+    $zip->addFromString('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Отчет" sheetId="1" r:id="rId1"/></sheets></workbook>');
+    $zip->addFromString('xl/_rels/workbook.xml.rels', '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
+    $zip->addFromString('xl/styles.xml', xlsx_styles());
+    $zip->addFromString('xl/worksheets/sheet1.xml', $sheetXml);
     $zip->close();
     duplicate_to_drive($path);
     return $path;
@@ -294,24 +381,25 @@ function make_excel_html(array $report): string {
     $dir = year_dir(EXPORTS_DIR, $report['report_date']);
     $path = $dir . '/report-' . $report['report_date'] . '-' . $report['id'] . '.xls';
     $names = ['income' => 'Приход', 'expense' => 'Расход', 'upcoming' => 'Будущий расход'];
+    $rowColors = ['income' => '#dcfce7', 'expense' => '#fee2e2', 'upcoming' => '#fef3c7'];
     $rows = '';
     foreach ($report['entries'] as $entry) {
         $amount = (float) $entry['amount'];
         if ($entry['type'] !== 'income') $amount = -$amount;
+        $bg = $rowColors[$entry['type']] ?? '#ffffff';
         $rows .= '<tr><td>' . xml_escape($names[$entry['type']] ?? $entry['type']) . '</td><td>'
-            . xml_escape($entry['description']) . '</td><td>' . $amount . '</td><td>'
-            . xml_escape($entry['entry_date']) . '</td></tr>';
+            . xml_escape($entry['description']) . '</td><td style="background:' . $bg . ';text-align:right">' . $amount . '</td><td>'
+            . xml_escape($entry['entry_date']) . '</td><td></td></tr>';
     }
-    $html = '<html><head><meta charset="utf-8"></head><body>'
-        . '<h1>Captain Fin</h1>'
-        . '<table border="1">'
-        . '<tr><th>Дата</th><td>' . xml_escape($report['report_date']) . '</td></tr>'
-        . '<tr><th>Остаток</th><td>' . (float) $report['opening_balance'] . '</td></tr>'
-        . '<tr><th>Пришло</th><td>' . (float) $report['computed']['income'] . '</td></tr>'
-        . '<tr><th>Ушло</th><td>' . (float) $report['computed']['expense'] . '</td></tr>'
-        . '<tr><th>Будущий остаток</th><td>' . (float) $report['computed']['future'] . '</td></tr>'
-        . '</table><br><table border="1"><tr><th>Статья</th><th>Описание</th><th>Сумма</th><th>Дата</th></tr>'
-        . $rows . '</table></body></html>';
+    $html = '<html><head><meta charset="utf-8"><style>'
+        . '@page{size:A4;margin:12mm}body{font-family:Arial,sans-serif;color:#111827}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d1d5db;padding:8px}th{background:#111827;color:#fff}.title{background:#111827;color:#fff;font-size:22px;font-weight:700;text-align:center}.meta{background:#f3f4f6;font-weight:700}.money{text-align:right;font-weight:700}.before{background:#dbeafe}.income{background:#d1fae5}.expense{background:#fee2e2}.future{background:#fef3c7}.after{background:#065f46;color:#fff}.notes{height:80px;vertical-align:top;background:#f9fafb}'
+        . '</style></head><body>'
+        . '<table><tr><td colspan="5" class="title">CAPTAIN FIN · ФИНАНСОВЫЙ ОТЧЕТ</td></tr>'
+        . '<tr><td class="meta">Дата отчета</td><td>' . xml_escape($report['report_date']) . '</td><td></td><td class="meta">Сформировано</td><td>' . date('Y-m-d H:i') . '</td></tr>'
+        . '<tr><th>БЫЛО</th><th>ПРИХОД</th><th>РАСХОД</th><th>СТАЛО</th><th>БУДЕТ</th></tr>'
+        . '<tr><td class="money before">' . (float) $report['opening_balance'] . '</td><td class="money income">' . (float) $report['computed']['income'] . '</td><td class="money expense">' . (-(float) $report['computed']['expense']) . '</td><td class="money after">' . (float) $report['computed']['current'] . '</td><td class="money future">' . (float) $report['computed']['future'] . '</td></tr>'
+        . '</table><br><table><tr><th>Тип</th><th>Описание</th><th>Сумма</th><th>Дата</th><th>Комментарий</th></tr>'
+        . $rows . '</table><br><table><tr><th colspan="5">Заметки</th></tr><tr><td colspan="5" class="notes">' . nl2br(xml_escape($report['notes'] ?? '')) . '</td></tr></table></body></html>';
     file_put_contents($path, $html, LOCK_EX);
     duplicate_to_drive($path);
     return $path;

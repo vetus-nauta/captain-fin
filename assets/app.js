@@ -1,4 +1,4 @@
-const APP_VERSION = '2026.05.19-captain-fin-006';
+const APP_VERSION = '2026.05.19-captain-fin-007';
 const PUBLIC_WEB_APP_URL = 'https://brkovic.ltd/captain-fin/';
 const DRIVE_FOLDER_URL = 'https://drive.google.com/drive/folders/1x9m41AUYPocx7H0UezF_lZnFvzWO54zQ?usp=sharing';
 const $ = (id) => document.getElementById(id);
