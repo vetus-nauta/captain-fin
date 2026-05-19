@@ -18,6 +18,7 @@ const STORAGE_DIR = __DIR__ . '/../storage';
 const REPORTS_DIR = STORAGE_DIR . '/reports';
 const EXPORTS_DIR = STORAGE_DIR . '/exports';
 const DRIVE_FOLDER_ID = '1x9m41AUYPocx7H0UezF_lZnFvzWO54zQ';
+const AUTH_COOKIE = 'captain_fin_auth';
 
 function respond(array $payload, int $status = 200): void {
     http_response_code($status);
@@ -50,6 +51,38 @@ function cors_headers(): void {
 
 function is_local_request(): bool {
     return in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1'], true);
+}
+
+function auth_secret(): string {
+    ensure_dirs();
+    $path = STORAGE_DIR . '/.captain-fin-secret';
+    if (!is_file($path)) {
+        file_put_contents($path, bin2hex(random_bytes(32)), LOCK_EX);
+        @chmod($path, 0600);
+    }
+    return trim((string) file_get_contents($path));
+}
+
+function set_local_auth_cookie(): void {
+    $expires = time() + 60 * 60 * 24 * 30;
+    $payload = (string) $expires;
+    $sig = hash_hmac('sha256', $payload, auth_secret());
+    setcookie(AUTH_COOKIE, $payload . '.' . $sig, [
+        'expires' => $expires,
+        'path' => '/',
+        'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+}
+
+function has_local_auth_cookie(): bool {
+    $raw = (string) ($_COOKIE[AUTH_COOKIE] ?? '');
+    if (!str_contains($raw, '.')) return false;
+    [$expires, $sig] = explode('.', $raw, 2);
+    if (!ctype_digit($expires) || (int) $expires < time()) return false;
+    $expected = hash_hmac('sha256', $expires, auth_secret());
+    return hash_equals($expected, $sig);
 }
 
 function auth_request(string $route, string $method = 'GET', array $payload = []): array {
@@ -101,6 +134,7 @@ function auth_request(string $route, string $method = 'GET', array $payload = []
 
 function authenticated(): bool {
     if (is_local_request()) return true;
+    if (has_local_auth_cookie()) return true;
     if (empty($_SESSION['brkovic_live_cookie'])) return false;
     $me = auth_request('/auth/me');
     return (bool) ($me['data']['authenticated'] ?? false);
@@ -277,6 +311,7 @@ if ($action === 'login') {
     $payload = input_json();
     $auth = auth_request('/auth/login', 'POST', ['email' => $payload['email'] ?? '', 'password' => $payload['password'] ?? '']);
     if (($auth['status'] ?? 500) >= 400) fail($auth['data']['error']['message'] ?? 'Не удалось войти', 401);
+    set_local_auth_cookie();
     respond(['authenticated' => true]);
 }
 
