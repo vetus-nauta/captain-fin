@@ -1,4 +1,4 @@
-const APP_VERSION = '2026.05.19-captain-fin-005';
+const APP_VERSION = '2026.05.19-captain-fin-006';
 const PUBLIC_WEB_APP_URL = 'https://brkovic.ltd/captain-fin/';
 const DRIVE_FOLDER_URL = 'https://drive.google.com/drive/folders/1x9m41AUYPocx7H0UezF_lZnFvzWO54zQ?usp=sharing';
 const $ = (id) => document.getElementById(id);
@@ -27,6 +27,24 @@ async function api(action, options = {}) {
   const data = await res.json();
   if (!res.ok || data.error) throw new Error(data.error || `Ошибка ${res.status}`);
   return data;
+}
+
+async function downloadFile(url, fallbackName = 'captain-fin.xlsx') {
+  const absoluteUrl = new URL(url, window.location.href).toString();
+  const res = await fetch(absoluteUrl, { credentials: 'same-origin' });
+  if (!res.ok) throw new Error(`Excel не скачался: ${res.status}`);
+  const blob = await res.blob();
+  if (!blob.size) throw new Error('Excel сформировался пустым файлом');
+  const filename = (res.headers.get('Content-Disposition') || '').match(/filename="?([^"]+)"?/i)?.[1] || fallbackName;
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = filename;
+  link.rel = 'noopener';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
 }
 
 function blankReport() {
@@ -257,8 +275,8 @@ async function exportExcel() {
   clearTimeout(saveTimer);
   if (!selectedId || $('saveState').textContent !== 'Сохранено') await saveReport();
   const result = await api('export', { method: 'POST', body: JSON.stringify({ id: selectedId }) });
-  setStatus(`Excel создан: ${result.path}`);
-  if (result.url) window.open(result.url, '_blank', 'noopener,noreferrer');
+  if (result.url) await downloadFile(result.url, `captain-fin-${$('reportDate').value || today()}.xlsx`);
+  setStatus('Excel сформирован и отправлен на скачивание.');
 }
 
 function openShareSheet() {
