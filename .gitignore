@@ -1,0 +1,9 @@
+storage/reports/*
+storage/exports/*
+storage/tmp/*
+!storage/reports/.gitkeep
+!storage/exports/.gitkeep
+!storage/tmp/.gitkeep
+.env
+*.log
+

@@ -1,0 +1,12 @@
+DirectoryIndex index.html
+
+<IfModule mod_headers.c>
+  Header set X-Robots-Tag "noindex, nofollow, noarchive"
+  <FilesMatch "\.(html|json|js|css)$">
+    Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+  </FilesMatch>
+</IfModule>
+
+RewriteEngine On
+RewriteRule ^api/?$ api/index.php [L]
+

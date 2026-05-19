@@ -1,0 +1,19 @@
+{
+  "name": "Captain Fin",
+  "short_name": "Captain Fin",
+  "description": "Private captain financial notes and reports.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f8fb",
+  "theme_color": "#f7f8fb",
+  "icons": [
+    {
+      "src": "assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
+
