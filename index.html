@@ -86,7 +86,25 @@
       <div class="status" id="status"></div>
     </main>
   </div>
+  <div class="share-sheet hidden" id="shareSheet" aria-hidden="true">
+    <div class="share-backdrop" id="closeShareBackdrop"></div>
+    <section class="share-panel" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
+      <div class="share-head">
+        <div>
+          <h2 id="shareTitle">Поделиться Captain Fin</h2>
+          <p id="shareUrlText">https://brkovic.ltd/captain-fin/</p>
+        </div>
+        <button class="soft" id="closeShare" type="button">Закрыть</button>
+      </div>
+      <div class="share-grid">
+        <button class="share-choice" id="shareMail" type="button"><span>@</span>Mail</button>
+        <button class="share-choice" id="shareWhatsApp" type="button"><span>WA</span>WhatsApp</button>
+        <button class="share-choice" id="shareTelegram" type="button"><span>TG</span>Telegram</button>
+        <button class="share-choice" id="shareDrive" type="button"><span>GD</span>Google Drive</button>
+        <button class="share-choice wide" id="copyPublicLink" type="button"><span>↗</span>Скопировать реальную ссылку</button>
+      </div>
+    </section>
+  </div>
   <script src="assets/app.js"></script>
 </body>
 </html>
-

@@ -1,4 +1,6 @@
-const APP_VERSION = '2026.05.19-captain-fin-001';
+const APP_VERSION = '2026.05.19-captain-fin-002';
+const PUBLIC_WEB_APP_URL = 'https://brkovic.ltd/captain-fin/';
+const DRIVE_FOLDER_URL = 'https://drive.google.com/drive/folders/1x9m41AUYPocx7H0UezF_lZnFvzWO54zQ?usp=sharing';
 const $ = (id) => document.getElementById(id);
 const money = (n) => Number(n || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -187,13 +189,33 @@ async function exportExcel() {
   setStatus(`Excel создан: ${result.path}`);
 }
 
-async function shareUrl(url = location.href) {
-  if (navigator.share) {
-    await navigator.share({ title: 'Captain Fin', url });
-  } else {
-    await navigator.clipboard.writeText(url);
-    setStatus('Ссылка скопирована.');
-  }
+function openShareSheet() {
+  $('shareUrlText').textContent = PUBLIC_WEB_APP_URL;
+  $('shareSheet').classList.remove('hidden');
+  $('shareSheet').setAttribute('aria-hidden', 'false');
+}
+
+function closeShareSheet() {
+  $('shareSheet').classList.add('hidden');
+  $('shareSheet').setAttribute('aria-hidden', 'true');
+}
+
+async function copyPublicLink() {
+  await navigator.clipboard.writeText(PUBLIC_WEB_APP_URL);
+  closeShareSheet();
+  setStatus('Реальная ссылка на web app скопирована.');
+}
+
+function openShareTarget(target) {
+  const encodedUrl = encodeURIComponent(PUBLIC_WEB_APP_URL);
+  const encodedText = encodeURIComponent('Captain Fin');
+  const targets = {
+    mail: `mailto:?subject=${encodedText}&body=${encodedUrl}`,
+    whatsapp: `https://wa.me/?text=${encodedText}%20${encodedUrl}`,
+    telegram: `https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`,
+    drive: DRIVE_FOLDER_URL
+  };
+  window.open(targets[target], '_blank', 'noopener,noreferrer');
 }
 
 function setStatus(text) {
@@ -240,10 +262,16 @@ $('saveReport').addEventListener('click', () => saveReport().catch((error) => se
 $('deleteReport').addEventListener('click', () => deleteReport().catch((error) => setStatus(error.message)));
 $('exportExcel').addEventListener('click', () => exportExcel().catch((error) => setStatus(error.message)));
 $('importSigned').addEventListener('click', importSignedInput);
-$('shareWebApp').addEventListener('click', () => shareUrl().catch((error) => setStatus(error.message)));
-$('shareCurrent').addEventListener('click', () => shareUrl(location.href).catch((error) => setStatus(error.message)));
-$('syncLocal').addEventListener('click', () => shareUrl(`${location.origin}${location.pathname.replace(/\/$/, '')}/api/?action=export-json`).catch((error) => setStatus(error.message)));
+$('shareWebApp').addEventListener('click', openShareSheet);
+$('shareCurrent').addEventListener('click', openShareSheet);
+$('syncLocal').addEventListener('click', () => copyPublicLink().catch((error) => setStatus(error.message)));
+$('closeShare').addEventListener('click', closeShareSheet);
+$('closeShareBackdrop').addEventListener('click', closeShareSheet);
+$('copyPublicLink').addEventListener('click', () => copyPublicLink().catch((error) => setStatus(error.message)));
+$('shareMail').addEventListener('click', () => openShareTarget('mail'));
+$('shareWhatsApp').addEventListener('click', () => openShareTarget('whatsapp'));
+$('shareTelegram').addEventListener('click', () => openShareTarget('telegram'));
+$('shareDrive').addEventListener('click', () => openShareTarget('drive'));
 $('search').addEventListener('input', renderList);
 
 checkAuth().catch((error) => setStatus(error.message));
-
