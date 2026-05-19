@@ -1,0 +1,7 @@
+[Unit]
+Description=Captain Fin submitted reports Google Drive sync
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/alexey/GitHub/captain-fin
+ExecStart=/home/alexey/GitHub/captain-fin/scripts/server-drive-sync.py

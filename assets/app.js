@@ -1,4 +1,4 @@
-const APP_VERSION = '2026.05.19-captain-fin-007';
+const APP_VERSION = '2026.05.19-captain-fin-008';
 const PUBLIC_WEB_APP_URL = 'https://brkovic.ltd/captain-fin/';
 const DRIVE_FOLDER_URL = 'https://drive.google.com/drive/folders/1x9m41AUYPocx7H0UezF_lZnFvzWO54zQ?usp=sharing';
 const $ = (id) => document.getElementById(id);
@@ -56,6 +56,7 @@ function blankReport() {
   $('notes').value = '';
   $('submitted').checked = false;
   $('entries').innerHTML = '';
+  renderAttachments([]);
   addEntry('income');
   showEditor();
   isHydrating = false;
@@ -104,6 +105,20 @@ function collectReport() {
     submitted: $('submitted').checked,
     entries
   };
+}
+
+function renderAttachments(items = []) {
+  if (!$('attachmentsList')) return;
+  if (!items.length) {
+    $('attachmentsList').innerHTML = '<div class="empty-list">Вложений пока нет.</div>';
+    return;
+  }
+  $('attachmentsList').innerHTML = items.map((item) => `
+    <a class="attachment-item" href="${escapeAttr(item.url)}" target="_blank" rel="noopener">
+      <span>${escapeAttr(item.name)}</span>
+      <span>${Math.ceil(Number(item.size || 0) / 1024)} KB</span>
+    </a>
+  `).join('');
 }
 
 function compute(report = collectReport()) {
@@ -197,6 +212,7 @@ async function selectReport(id) {
   $('notes').value = report.notes || '';
   $('submitted').checked = Boolean(report.submitted);
   $('entries').innerHTML = '';
+  renderAttachments(report.attachments || []);
   report.entries.forEach((entry) => addEntry(entry.type, entry));
   if (!report.entries.length) addEntry('income');
   showEditor();
@@ -261,14 +277,63 @@ function showEditor() {
 }
 
 async function deleteReport() {
-  if (!selectedId || !confirm('Удалить отчет?')) return;
+  if (!selectedId) return;
+  if (!confirm('Удалить отчет в архив удаленных?')) return;
+  if (!confirm('Подтвердите еще раз. Запись исчезнет из списка, но останется в архиве удаленных.')) return;
   await api(`delete&id=${encodeURIComponent(selectedId)}`, { method: 'POST', body: '{}' });
   selectedId = null;
   reports = await api('reports');
   const current = reports.find((report) => !report.submitted);
   if (current) await selectReport(current.id);
   else blankReport();
-  setStatus('Удалено.');
+  setStatus('Перемещено в архив удаленных.');
+}
+
+async function uploadAttachment() {
+  if (!$('attachmentInput').files.length) return;
+  if (!selectedId || $('saveState').textContent !== 'Сохранено') await saveReport();
+  const data = new FormData();
+  data.append('attachment', $('attachmentInput').files[0]);
+  const res = await fetch(`api/?action=upload&id=${encodeURIComponent(selectedId)}`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    body: data
+  });
+  const payload = await res.json();
+  if (!res.ok || payload.error) throw new Error(payload.error || `Ошибка ${res.status}`);
+  $('attachmentInput').value = '';
+  renderAttachments(payload.attachments || []);
+  setStatus('Вложение сохранено на сервере.');
+}
+
+async function openArchive() {
+  const archived = await api('archived');
+  if (!archived.length) return setStatus('Архив удаленных пуст.');
+  const text = archived.slice(0, 12).map((r) => `${r.report_date} · ${r.notes || r.id}`).join('\n');
+  alert(`Архив удаленных:\n\n${text}`);
+}
+
+async function showStorageInfo() {
+  const info = await api('storage-info');
+  alert(`Пути хранения на сервере:\n\nЗаписи: ${info.reports}\nУдаленные: ${info.deleted_archive}\nВложения: ${info.attachments}\nExcel: ${info.exports}\n\nКорень: ${info.server_root}\nGoogle Drive: ${info.drive_url}`);
+}
+
+async function runSummary() {
+  const from = $('summaryFrom').value;
+  const to = $('summaryTo').value;
+  const params = new URLSearchParams();
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  const summary = await api(`summary${params.toString() ? '&' + params.toString() : ''}`);
+  const t = summary.totals;
+  $('summaryResult').innerHTML = `
+    <strong>${t.count} сданных отчетов</strong><br>
+    Было: ${money(t.opening)}<br>
+    Приход: ${money(t.income)}<br>
+    Расход: ${money(t.expense)}<br>
+    Стало: ${money(t.current)}<br>
+    Будет: ${money(t.future)}
+  `;
 }
 
 async function exportExcel() {
@@ -355,9 +420,14 @@ $('saveReport').addEventListener('click', () => saveReport().catch((error) => se
 $('backToList').addEventListener('click', () => saveAndShowList().catch((error) => setStatus(error.message)));
 $('deleteReport').addEventListener('click', () => deleteReport().catch((error) => setStatus(error.message)));
 $('exportExcel').addEventListener('click', () => exportExcel().catch((error) => setStatus(error.message)));
+$('attachmentInput').addEventListener('change', () => uploadAttachment().catch((error) => setStatus(error.message)));
 $('importSigned').addEventListener('click', importSignedInput);
 $('shareWebApp').addEventListener('click', openShareSheet);
 $('syncLocal').addEventListener('click', () => copyPublicLink().catch((error) => setStatus(error.message)));
+$('archiveOpen').addEventListener('click', () => openArchive().catch((error) => setStatus(error.message)));
+$('storageInfo').addEventListener('click', () => showStorageInfo().catch((error) => setStatus(error.message)));
+$('summaryOpen').addEventListener('click', () => $('summaryBox').classList.toggle('hidden'));
+$('summaryRun').addEventListener('click', () => runSummary().catch((error) => setStatus(error.message)));
 $('closeShare').addEventListener('click', closeShareSheet);
 $('closeShareBackdrop').addEventListener('click', closeShareSheet);
 $('copyPublicLink').addEventListener('click', () => copyPublicLink().catch((error) => setStatus(error.message)));

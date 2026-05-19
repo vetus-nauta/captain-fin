@@ -12,11 +12,13 @@ session_set_cookie_params([
 ]);
 session_start();
 
-const APP_VERSION = '2026.05.19-captain-fin-007';
+const APP_VERSION = '2026.05.19-captain-fin-008';
 const AUTH_BASE = 'https://brkovic.ltd/api';
 const STORAGE_DIR = __DIR__ . '/../storage';
 const REPORTS_DIR = STORAGE_DIR . '/reports';
 const EXPORTS_DIR = STORAGE_DIR . '/exports';
+const TRASH_DIR = STORAGE_DIR . '/trash';
+const ATTACHMENTS_DIR = STORAGE_DIR . '/attachments';
 const DRIVE_FOLDER_ID = '1x9m41AUYPocx7H0UezF_lZnFvzWO54zQ';
 const AUTH_COOKIE = 'captain_fin_auth';
 
@@ -145,7 +147,7 @@ function require_auth(): void {
 }
 
 function ensure_dirs(): void {
-    foreach ([REPORTS_DIR, EXPORTS_DIR] as $dir) {
+    foreach ([REPORTS_DIR, EXPORTS_DIR, TRASH_DIR, ATTACHMENTS_DIR] as $dir) {
         if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
             fail('Не удалось создать папку хранения', 500);
         }
@@ -163,6 +165,34 @@ function report_path(string $id, string $date): string {
     return year_dir(REPORTS_DIR, $date) . '/' . basename($id) . '.json';
 }
 
+function safe_file_name(string $name): string {
+    $name = preg_replace('/[^\pL\pN._ -]+/u', '_', basename($name)) ?: 'attachment';
+    return trim($name, " .\t\n\r\0\x0B") ?: 'attachment';
+}
+
+function attachment_dir(string $id, string $date): string {
+    $dir = year_dir(ATTACHMENTS_DIR, $date) . '/' . basename($id);
+    if (!is_dir($dir)) mkdir($dir, 0775, true);
+    return $dir;
+}
+
+function list_attachments(string $id, string $date): array {
+    $dir = year_dir(ATTACHMENTS_DIR, $date) . '/' . basename($id);
+    $items = [];
+    foreach (glob($dir . '/*') ?: [] as $path) {
+        if (!is_file($path)) continue;
+        $name = basename($path);
+        $items[] = [
+            'name' => $name,
+            'size' => filesize($path) ?: 0,
+            'updated_at' => gmdate('c', filemtime($path) ?: time()),
+            'url' => 'api/?action=attachment&id=' . rawurlencode($id) . '&file=' . rawurlencode($name),
+        ];
+    }
+    usort($items, fn($a, $b) => strcmp($a['name'], $b['name']));
+    return $items;
+}
+
 function read_report_file(string $path): ?array {
     $data = json_decode((string) file_get_contents($path), true);
     return is_array($data) ? normalize_report($data) : null;
@@ -176,6 +206,19 @@ function all_reports(): array {
         if ($report) $reports[] = $report;
     }
     usort($reports, fn($a, $b) => strcmp($b['report_date'] . $b['id'], $a['report_date'] . $a['id']));
+    return $reports;
+}
+
+function archived_reports(): array {
+    ensure_dirs();
+    $reports = [];
+    foreach (glob(TRASH_DIR . '/*/*.json') ?: [] as $path) {
+        $report = read_report_file($path);
+        if (!$report) continue;
+        $report['deleted_file'] = basename($path);
+        $reports[] = $report;
+    }
+    usort($reports, fn($a, $b) => strcmp((string) ($b['deleted_at'] ?? '') . $b['id'], (string) ($a['deleted_at'] ?? '') . $a['id']));
     return $reports;
 }
 
@@ -217,11 +260,13 @@ function normalize_report(array $payload): array {
         'opening_balance' => (float) ($payload['opening_balance'] ?? 0),
         'notes' => trim((string) ($payload['notes'] ?? '')),
         'submitted' => !empty($payload['submitted']) ? 1 : 0,
+        'deleted_at' => (string) ($payload['deleted_at'] ?? ''),
         'entries' => $entries,
         'updated_at' => gmdate('c'),
         'app_version' => APP_VERSION,
     ];
     $report['computed'] = compute($entries, $report['opening_balance']);
+    $report['attachments'] = list_attachments($report['id'], $report['report_date']);
     return $report;
 }
 
@@ -231,14 +276,71 @@ function save_report(array $payload): array {
     foreach (glob(REPORTS_DIR . '/*/' . basename($report['id']) . '.json') ?: [] as $old) {
         if ($old !== report_path($report['id'], $report['report_date'])) @unlink($old);
     }
-    file_put_contents(report_path($report['id'], $report['report_date']), json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
+    $path = report_path($report['id'], $report['report_date']);
+    file_put_contents($path, json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
+    if (!empty($report['submitted'])) {
+        duplicate_to_drive($path);
+    }
     return $report;
 }
 
 function delete_report(string $id): void {
     foreach (glob(REPORTS_DIR . '/*/' . basename($id) . '.json') ?: [] as $path) {
+        $report = read_report_file($path);
+        $date = $report['report_date'] ?? date('Y-m-d');
+        $report['deleted_at'] = gmdate('c');
+        $trash = year_dir(TRASH_DIR, (string) $date) . '/' . gmdate('Ymd-His') . '-' . basename($id) . '.json';
+        file_put_contents($trash, json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
         @unlink($path);
     }
+}
+
+function restore_report(string $id): ?array {
+    foreach (glob(TRASH_DIR . '/*/*-' . basename($id) . '.json') ?: [] as $path) {
+        $report = read_report_file($path);
+        if (!$report) continue;
+        $report['deleted_at'] = '';
+        file_put_contents(report_path($report['id'], $report['report_date']), json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
+        @unlink($path);
+        return $report;
+    }
+    return null;
+}
+
+function upload_attachment(string $id): array {
+    $report = find_report($id);
+    if (!$report) fail('Отчет не найден', 404);
+    if (empty($_FILES['attachment']) || !is_uploaded_file($_FILES['attachment']['tmp_name'])) fail('Файл не получен', 400);
+    if ((int) ($_FILES['attachment']['size'] ?? 0) > 25 * 1024 * 1024) fail('Файл больше 25 МБ', 413);
+    $name = safe_file_name((string) ($_FILES['attachment']['name'] ?? 'attachment'));
+    $target = attachment_dir($report['id'], $report['report_date']) . '/' . $name;
+    if (is_file($target)) {
+        $info = pathinfo($name);
+        $base = $info['filename'] ?? 'attachment';
+        $ext = isset($info['extension']) ? '.' . $info['extension'] : '';
+        $target = attachment_dir($report['id'], $report['report_date']) . '/' . $base . '-' . date('His') . $ext;
+    }
+    if (!move_uploaded_file($_FILES['attachment']['tmp_name'], $target)) fail('Не удалось сохранить вложение', 500);
+    if (!empty($report['submitted'])) duplicate_to_drive($target);
+    return list_attachments($report['id'], $report['report_date']);
+}
+
+function summary_reports(?string $from, ?string $to): array {
+    $items = array_values(array_filter(all_reports(), function ($report) use ($from, $to) {
+        if (empty($report['submitted'])) return false;
+        $date = (string) $report['report_date'];
+        if ($from && $date < $from) return false;
+        if ($to && $date > $to) return false;
+        return true;
+    }));
+    $totals = ['count' => count($items), 'opening' => 0.0, 'income' => 0.0, 'expense' => 0.0, 'upcoming' => 0.0, 'current' => 0.0, 'future' => 0.0];
+    foreach ($items as $report) {
+        $totals['opening'] += (float) $report['opening_balance'];
+        foreach (['income', 'expense', 'upcoming', 'current', 'future'] as $key) {
+            $totals[$key] += (float) ($report['computed'][$key] ?? 0);
+        }
+    }
+    return ['from' => $from, 'to' => $to, 'totals' => $totals, 'reports' => $items];
 }
 
 function xml_escape(mixed $value): string {
@@ -435,6 +537,7 @@ if ($action === 'me') respond(['authenticated' => authenticated(), 'version' => 
 require_auth();
 
 if ($action === 'reports') respond(all_reports());
+if ($action === 'archived') respond(archived_reports());
 if ($action === 'report') {
     $report = find_report((string) ($_GET['id'] ?? ''));
     $report ? respond($report) : fail('Отчет не найден', 404);
@@ -442,7 +545,43 @@ if ($action === 'report') {
 if ($action === 'save') respond(save_report(input_json()));
 if ($action === 'delete') {
     delete_report((string) ($_GET['id'] ?? ''));
-    respond(['deleted' => true]);
+    respond(['archived' => true]);
+}
+if ($action === 'restore') {
+    $report = restore_report((string) ($_GET['id'] ?? ''));
+    $report ? respond($report) : fail('Архивная запись не найдена', 404);
+}
+if ($action === 'upload') {
+    respond(['attachments' => upload_attachment((string) ($_GET['id'] ?? ''))]);
+}
+if ($action === 'attachment') {
+    $report = find_report((string) ($_GET['id'] ?? ''));
+    if (!$report) fail('Отчет не найден', 404);
+    $file = safe_file_name((string) ($_GET['file'] ?? ''));
+    $path = year_dir(ATTACHMENTS_DIR, $report['report_date']) . '/' . basename($report['id']) . '/' . $file;
+    if (!is_file($path)) fail('Вложение не найдено', 404);
+    header('Content-Type: application/octet-stream');
+    header('Content-Disposition: attachment; filename="' . basename($path) . '"');
+    header('Content-Length: ' . filesize($path));
+    header('X-Robots-Tag: noindex, nofollow, noarchive');
+    readfile($path);
+    exit;
+}
+if ($action === 'summary') {
+    $from = trim((string) ($_GET['from'] ?? '')) ?: null;
+    $to = trim((string) ($_GET['to'] ?? '')) ?: null;
+    respond(summary_reports($from, $to));
+}
+if ($action === 'storage-info') {
+    respond([
+        'server_root' => STORAGE_DIR,
+        'reports' => REPORTS_DIR . '/YYYY/*.json',
+        'deleted_archive' => TRASH_DIR . '/YYYY/*.json',
+        'attachments' => ATTACHMENTS_DIR . '/YYYY/report-id/*',
+        'exports' => EXPORTS_DIR . '/YYYY/*.xlsx',
+        'drive_folder_id' => DRIVE_FOLDER_ID,
+        'drive_url' => 'https://drive.google.com/drive/folders/' . DRIVE_FOLDER_ID,
+    ]);
 }
 if ($action === 'export') {
     $payload = input_json();

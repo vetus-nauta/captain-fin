@@ -10,7 +10,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/icon.svg">
   <link rel="apple-touch-icon" href="assets/icon.svg">
-  <link rel="stylesheet" href="assets/app.css?v=2026.05.19-captain-fin-007">
+  <link rel="stylesheet" href="assets/app.css?v=2026.05.19-captain-fin-008">
   <title>Captain Fin</title>
 </head>
 <body>
@@ -40,6 +40,17 @@
       <div class="side-actions">
         <button class="soft" id="shareWebApp">Поделиться web app</button>
         <button class="soft" id="syncLocal">Экспорт для локальной версии</button>
+        <button class="soft" id="summaryOpen">Сводка сданных</button>
+        <button class="soft" id="archiveOpen">Архив удаленных</button>
+        <button class="soft" id="storageInfo">Пути хранения</button>
+      </div>
+      <div class="summary-box hidden" id="summaryBox">
+        <div class="summary-dates">
+          <input type="date" id="summaryFrom">
+          <input type="date" id="summaryTo">
+        </div>
+        <button id="summaryRun" type="button">Показать</button>
+        <div class="summary-result" id="summaryResult"></div>
       </div>
       <input class="search" id="search" placeholder="Поиск">
       <div class="report-list" id="reportList"></div>
@@ -82,6 +93,17 @@
         <div class="entries" id="entries"></div>
       </section>
 
+      <section class="attachments-panel">
+        <div class="panel-head">
+          <h2>Вложения</h2>
+          <label class="file-button">
+            Добавить файл
+            <input type="file" id="attachmentInput">
+          </label>
+        </div>
+        <div class="attachments-list" id="attachmentsList"></div>
+      </section>
+
       <section class="actions">
         <button id="saveReport">Сохранить</button>
         <button class="soft" id="exportExcel">Excel</button>
@@ -109,6 +131,6 @@
       </div>
     </section>
   </div>
-  <script src="assets/app.js?v=2026.05.19-captain-fin-007"></script>
+  <script src="assets/app.js?v=2026.05.19-captain-fin-008"></script>
 </body>
 </html>
