@@ -1,4 +1,4 @@
-const APP_VERSION = '2026.05.19-captain-fin-004';
+const APP_VERSION = '2026.05.19-captain-fin-005';
 const PUBLIC_WEB_APP_URL = 'https://brkovic.ltd/captain-fin/';
 const DRIVE_FOLDER_URL = 'https://drive.google.com/drive/folders/1x9m41AUYPocx7H0UezF_lZnFvzWO54zQ?usp=sharing';
 const $ = (id) => document.getElementById(id);
@@ -15,7 +15,11 @@ function today() {
 }
 
 async function api(action, options = {}) {
-  const res = await fetch(`api/?action=${encodeURIComponent(action)}`, {
+  const parts = String(action).split('&');
+  const name = parts.shift();
+  const query = parts.join('&');
+  const url = `api/?action=${encodeURIComponent(name)}${query ? `&${query}` : ''}`;
+  const res = await fetch(url, {
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     ...options
@@ -26,6 +30,7 @@ async function api(action, options = {}) {
 }
 
 function blankReport() {
+  clearTimeout(saveTimer);
   isHydrating = true;
   selectedId = null;
   $('reportDate').value = today();
@@ -37,6 +42,7 @@ function blankReport() {
   showEditor();
   isHydrating = false;
   updateAll();
+  markClean();
   renderList();
 }
 
@@ -59,8 +65,8 @@ function addEntry(type = 'income', entry = {}) {
     <button class="danger remove" title="Удалить">×</button>
   `;
   row.querySelector('.type').value = entry.type || type;
-  row.querySelectorAll('input,select').forEach((el) => el.addEventListener('input', updateAll));
-  row.querySelector('.remove').addEventListener('click', () => { row.remove(); updateAll(); });
+  row.querySelectorAll('input,select').forEach((el) => el.addEventListener('input', handleEditorInput));
+  row.querySelector('.remove').addEventListener('click', () => { row.remove(); handleEditorInput(); });
   $('entries').appendChild(row);
   updateAll();
 }
@@ -101,7 +107,6 @@ function updateAll() {
   ].map(([label, value]) => `<div class="metric"><span>${label}</span><strong>${money(value)}</strong></div>`).join('');
   const title = $('notes').value.trim().split('\n').find(Boolean) || $('reportDate').value || 'Новая запись';
   $('editorTitle').textContent = title.slice(0, 48);
-  if (!isHydrating) scheduleAutosave();
 }
 
 function parseSignedItems(text) {
@@ -130,6 +135,7 @@ function importSignedInput() {
   const onlyBlank = [...$('entries').querySelectorAll('.entry')].length === 1 && !collectReport().entries.length;
   if (onlyBlank) $('entries').innerHTML = '';
   items.forEach((item) => addEntry(item.type, item));
+  handleEditorInput();
   setStatus(`Добавлено строк: ${items.length}.`);
 }
 
@@ -144,14 +150,14 @@ function renderList() {
     const c = r.computed || {};
     const active = r.id === selectedId ? 'active' : '';
     const submitted = r.submitted ? 'submitted' : '';
-    return `<div class="report-item ${active} ${submitted}" data-id="${r.id}">
-      <strong>${r.report_date}${r.submitted ? ' · сдано' : ''}</strong>
-      <span>${(r.notes || '').slice(0, 72) || 'Без заметок'}</span>
+    return `<div class="report-item ${active} ${submitted}" data-id="${escapeAttr(r.id)}">
+      <strong>${escapeAttr(r.report_date)}${r.submitted ? ' · сдано' : ''}</strong>
+      <span>${escapeAttr((r.notes || '').slice(0, 72) || 'Без заметок')}</span>
       <span>остаток ${money(c.current)} / будущий ${money(c.future)}</span>
     </div>`;
   }).join('');
   document.querySelectorAll('.report-item').forEach((item) => {
-    item.addEventListener('click', () => selectReport(Number(item.dataset.id)));
+    item.addEventListener('click', () => selectReport(item.dataset.id));
   });
 }
 
@@ -164,8 +170,9 @@ async function loadReports() {
 }
 
 async function selectReport(id) {
+  clearTimeout(saveTimer);
   isHydrating = true;
-  const report = await api(`report&id=${id}`);
+  const report = await api(`report&id=${encodeURIComponent(id)}`);
   selectedId = report.id;
   $('reportDate').value = report.report_date;
   $('openingBalance').value = report.opening_balance;
@@ -177,6 +184,7 @@ async function selectReport(id) {
   showEditor();
   isHydrating = false;
   updateAll();
+  markClean();
   renderList();
 }
 
@@ -189,11 +197,25 @@ async function saveReport() {
     selectedId = saved.id;
     reports = await api('reports');
     await selectReport(selectedId);
-    $('saveState').textContent = 'Сохранено';
+    markClean();
     setStatus('Сохранено.');
+  } catch (error) {
+    $('saveState').textContent = 'Ошибка';
+    throw error;
   } finally {
     isSaving = false;
   }
+}
+
+function markClean() {
+  clearTimeout(saveTimer);
+  $('saveState').textContent = 'Сохранено';
+}
+
+function handleEditorInput() {
+  if (isHydrating) return;
+  updateAll();
+  scheduleAutosave();
 }
 
 function scheduleAutosave() {
@@ -206,7 +228,7 @@ function scheduleAutosave() {
 
 async function saveAndShowList() {
   clearTimeout(saveTimer);
-  await saveReport();
+  if ($('saveState').textContent !== 'Сохранено') await saveReport();
   showList();
 }
 
@@ -222,7 +244,7 @@ function showEditor() {
 
 async function deleteReport() {
   if (!selectedId || !confirm('Удалить отчет?')) return;
-  await api(`delete&id=${selectedId}`, { method: 'POST', body: '{}' });
+  await api(`delete&id=${encodeURIComponent(selectedId)}`, { method: 'POST', body: '{}' });
   selectedId = null;
   reports = await api('reports');
   const current = reports.find((report) => !report.submitted);
@@ -304,9 +326,12 @@ $('loginForm').addEventListener('submit', async (event) => {
 });
 
 document.addEventListener('input', (event) => {
-  if (['reportDate', 'openingBalance', 'notes', 'submitted'].includes(event.target.id)) updateAll();
+  if (['reportDate', 'openingBalance', 'notes', 'submitted'].includes(event.target.id)) handleEditorInput();
 });
-document.querySelectorAll('[data-add]').forEach((button) => button.addEventListener('click', () => addEntry(button.dataset.add)));
+document.querySelectorAll('[data-add]').forEach((button) => button.addEventListener('click', () => {
+  addEntry(button.dataset.add);
+  handleEditorInput();
+}));
 $('newReport').addEventListener('click', blankReport);
 $('saveReport').addEventListener('click', () => saveReport().catch((error) => setStatus(error.message)));
 $('backToList').addEventListener('click', () => saveAndShowList().catch((error) => setStatus(error.message)));
