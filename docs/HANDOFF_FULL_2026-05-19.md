@@ -1,4 +1,4 @@
-# Captain Fin / Local Reports Handoff - 2026-05-19
+# Captain Fin / Local Reports Handoff - updated 2026-05-20
 
 ## What This Is
 
@@ -19,6 +19,12 @@ The web app is now the source of truth for shared/mobile use. The local desktop 
 - BRKOVIC site repo copy: `git@github.com:vetus-nauta/brkovic-ltd.git`
 - Local desktop app source currently lives in:
   `/home/alexey/GitHub/Revoyacht/local_report_client`
+
+Latest known commits after the 2026-05-20 input-window fixes:
+
+- `captain-fin` main: `65ad56b` (`Sync signed note entries without duplicates`)
+- `brkovic-ltd` main: `0dd9ee1` (`Update Captain Fin signed entry sync`)
+- `Revoyacht` branch `work/builder-v2-next-20260508`: `06e6c95` (`Fix local report signed entry sync`)
 
 ## Web App Server Storage
 
@@ -132,6 +138,32 @@ Current intended layout is desktop/two-column:
 
 Do not convert this app to the mobile split-screen layout. That split belongs to the web/PWA.
 
+## Signed Notes Input
+
+The notes textarea is the source for quick financial entry lines with `+` and `-`.
+
+Examples:
+
+```text
++100 client payment
+-40 fuel
++5 cash
+```
+
+Current behavior in both web/PWA and local desktop:
+
+- typing or pasting signed lines immediately rebuilds the entries table below
+- totals/metrics recalculate from the rebuilt entries immediately
+- the `Разобрать + / -` button is a forced sync, not an append action
+- repeated button presses must not duplicate entries
+- trailing newlines in notes are preserved while editing
+- web autosave must not rehydrate the active editor while the user is typing
+
+Important implementation detail:
+
+- Web app: `assets/app.js`, functions `syncSignedEntries`, `handleEditorInput`, `saveReport`
+- Local desktop: `local_report_client/app.py`, embedded JS functions `syncSignedEntries`, `importSignedInput`
+
 ## Features Implemented
 
 Web app:
@@ -147,6 +179,8 @@ Web app:
 - professional Excel report template
 - server storage info
 - share web app
+- stable autosave in the notes editor
+- signed `+ / -` notes synced to entries without duplicates
 
 Local desktop:
 
@@ -158,15 +192,23 @@ Local desktop:
 - summary for submitted reports
 - storage info
 - desktop layout preserved
+- signed `+ / -` notes synced to entries without duplicates
 
 ## Recent Verification
 
-Verified on 2026-05-19:
+Verified on 2026-05-20:
 
-- Live web app version: `2026.05.19-captain-fin-008`
-- Local desktop app starts on `127.0.0.1:8787`
+- Live web app version: `2026.05.20-captain-fin-010`
+- Live marker checked at `https://brkovic.ltd/captain-fin/CAPTAIN_FIN_MARKER.json`
+- Live `assets/app.js` checked and reports `APP_VERSION = '2026.05.20-captain-fin-010'`
+- Local web app mirror tested on `127.0.0.1:18787`
+- Local desktop app tested on temporary `127.0.0.1:18788` and normally runs on `127.0.0.1:8787`
 - Local desktop `POST /api/pull-web-server` imports web report without duplication by `web_id`
 - Systemd Drive sync timer is active
+- Web/PWA signed-input regression passed:
+  `+100 / -40` creates 2 rows and totals 100/40/60; pressing `Разобрать + / -` again keeps 2 rows; editing to three signed lines rebuilds 3 rows and totals 125/20/105.
+- Local desktop signed-input regression passed:
+  `+200 / -75` creates 2 rows and totals 200/75/125; pressing `Распределить заметки...` again keeps 2 rows; editing to three signed lines rebuilds 3 rows and totals 220/30/190.
 
 ## Backup
 
@@ -183,4 +225,3 @@ It includes:
 - local SQLite database
 - local exports/attachments/deleted archive
 - live server storage downloaded from FTP
-
