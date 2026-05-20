@@ -1,4 +1,4 @@
-const APP_VERSION = '2026.05.20-captain-fin-009';
+const APP_VERSION = '2026.05.20-captain-fin-010';
 const PUBLIC_WEB_APP_URL = 'https://brkovic.ltd/captain-fin/';
 const DRIVE_FOLDER_URL = 'https://drive.google.com/drive/folders/1x9m41AUYPocx7H0UezF_lZnFvzWO54zQ?usp=sharing';
 const $ = (id) => document.getElementById(id);
@@ -170,14 +170,22 @@ function parseSignedItems(text) {
   return items;
 }
 
-function importSignedInput() {
+function syncSignedEntries({ force = false } = {}) {
   const items = parseSignedItems($('notes').value);
-  if (!items.length) return setStatus('Не нашел суммы со знаком + или -.');
-  const onlyBlank = [...$('entries').querySelectorAll('.entry')].length === 1 && !collectReport().entries.length;
-  if (onlyBlank) $('entries').innerHTML = '';
+  if (!items.length) {
+    if (force) setStatus('Не нашел суммы со знаком + или -.');
+    return false;
+  }
+  $('entries').innerHTML = '';
   items.forEach((item) => addEntry(item.type, item));
-  handleEditorInput();
-  setStatus(`Добавлено строк: ${items.length}.`);
+  updateAll();
+  if (force) setStatus(`Обновлено строк: ${items.length}.`);
+  return true;
+}
+
+function importSignedInput() {
+  const changed = syncSignedEntries({ force: true });
+  if (changed) handleEditorInput();
 }
 
 function renderList() {
@@ -273,8 +281,9 @@ function markClean() {
   $('saveState').textContent = 'Сохранено';
 }
 
-function handleEditorInput() {
+function handleEditorInput(source = null) {
   if (isHydrating || isComposing) return;
+  if (source && source.id === 'notes') syncSignedEntries();
   updateAll();
   scheduleAutosave();
 }
@@ -437,7 +446,7 @@ $('loginForm').addEventListener('submit', async (event) => {
 });
 
 document.addEventListener('input', (event) => {
-  if (['reportDate', 'openingBalance', 'notes', 'submitted'].includes(event.target.id)) handleEditorInput();
+  if (['reportDate', 'openingBalance', 'notes', 'submitted'].includes(event.target.id)) handleEditorInput(event.target);
 });
 document.addEventListener('compositionstart', () => { isComposing = true; });
 document.addEventListener('compositionend', () => {
