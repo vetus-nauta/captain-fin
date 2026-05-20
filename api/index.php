@@ -12,7 +12,7 @@ session_set_cookie_params([
 ]);
 session_start();
 
-const APP_VERSION = '2026.05.19-captain-fin-008';
+const APP_VERSION = '2026.05.20-captain-fin-009';
 const AUTH_BASE = 'https://brkovic.ltd/api';
 const STORAGE_DIR = __DIR__ . '/../storage';
 const REPORTS_DIR = STORAGE_DIR . '/reports';
@@ -258,7 +258,7 @@ function normalize_report(array $payload): array {
         'id' => (string) ($payload['id'] ?? ('cf-' . date('Ymd-His') . '-' . bin2hex(random_bytes(3)))),
         'report_date' => $date,
         'opening_balance' => (float) ($payload['opening_balance'] ?? 0),
-        'notes' => trim((string) ($payload['notes'] ?? '')),
+        'notes' => (string) ($payload['notes'] ?? ''),
         'submitted' => !empty($payload['submitted']) ? 1 : 0,
         'deleted_at' => (string) ($payload['deleted_at'] ?? ''),
         'entries' => $entries,

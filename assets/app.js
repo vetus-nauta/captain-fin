@@ -1,4 +1,4 @@
-const APP_VERSION = '2026.05.19-captain-fin-008';
+const APP_VERSION = '2026.05.20-captain-fin-009';
 const PUBLIC_WEB_APP_URL = 'https://brkovic.ltd/captain-fin/';
 const DRIVE_FOLDER_URL = 'https://drive.google.com/drive/folders/1x9m41AUYPocx7H0UezF_lZnFvzWO54zQ?usp=sharing';
 const $ = (id) => document.getElementById(id);
@@ -9,6 +9,9 @@ let selectedId = null;
 let saveTimer = null;
 let isSaving = false;
 let isHydrating = false;
+let isComposing = false;
+let savePromise = null;
+let lastSavedSnapshot = '';
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -61,6 +64,7 @@ function blankReport() {
   showEditor();
   isHydrating = false;
   updateAll();
+  lastSavedSnapshot = currentSnapshot();
   markClean();
   renderList();
 }
@@ -101,10 +105,14 @@ function collectReport() {
     id: selectedId,
     report_date: $('reportDate').value || today(),
     opening_balance: Number($('openingBalance').value || 0),
-    notes: $('notes').value.trim(),
+    notes: $('notes').value,
     submitted: $('submitted').checked,
     entries
   };
+}
+
+function currentSnapshot() {
+  return JSON.stringify(collectReport());
 }
 
 function renderAttachments(items = []) {
@@ -218,36 +226,55 @@ async function selectReport(id) {
   showEditor();
   isHydrating = false;
   updateAll();
+  lastSavedSnapshot = currentSnapshot();
   markClean();
   renderList();
 }
 
-async function saveReport() {
-  if (isSaving) return;
+async function saveReport({ refreshEditor = false } = {}) {
+  if (isSaving) return savePromise;
   isSaving = true;
   $('saveState').textContent = 'Сохранение...';
-  try {
-    const saved = await api('save', { method: 'POST', body: JSON.stringify(collectReport()) });
+  savePromise = (async () => {
+    const payload = collectReport();
+    const sentSnapshot = JSON.stringify(payload);
+    const saved = await api('save', { method: 'POST', body: JSON.stringify(payload) });
     selectedId = saved.id;
     reports = await api('reports');
-    await selectReport(selectedId);
-    markClean();
-    setStatus('Сохранено.');
+    if (refreshEditor) {
+      await selectReport(selectedId);
+      setStatus('Сохранено.');
+      return;
+    }
+    renderList();
+    if (currentSnapshot() === sentSnapshot) {
+      lastSavedSnapshot = sentSnapshot;
+      markClean();
+      setStatus('Сохранено.');
+    } else {
+      $('saveState').textContent = 'Есть изменения';
+      scheduleAutosave();
+    }
+  })();
+  try {
+    await savePromise;
   } catch (error) {
     $('saveState').textContent = 'Ошибка';
     throw error;
   } finally {
     isSaving = false;
+    savePromise = null;
   }
 }
 
 function markClean() {
   clearTimeout(saveTimer);
+  lastSavedSnapshot = currentSnapshot();
   $('saveState').textContent = 'Сохранено';
 }
 
 function handleEditorInput() {
-  if (isHydrating) return;
+  if (isHydrating || isComposing) return;
   updateAll();
   scheduleAutosave();
 }
@@ -257,12 +284,13 @@ function scheduleAutosave() {
   if (!$('appShell').classList.contains('mobile-editor') && window.matchMedia('(max-width: 920px)').matches) return;
   clearTimeout(saveTimer);
   $('saveState').textContent = 'Есть изменения';
-  saveTimer = setTimeout(() => saveReport().catch((error) => setStatus(error.message)), 1400);
+  const delay = document.activeElement === $('notes') ? 2600 : 1400;
+  saveTimer = setTimeout(() => saveReport().catch((error) => setStatus(error.message)), delay);
 }
 
 async function saveAndShowList() {
   clearTimeout(saveTimer);
-  if ($('saveState').textContent !== 'Сохранено') await saveReport();
+  if (currentSnapshot() !== lastSavedSnapshot) await saveReport();
   showList();
 }
 
@@ -291,7 +319,7 @@ async function deleteReport() {
 
 async function uploadAttachment() {
   if (!$('attachmentInput').files.length) return;
-  if (!selectedId || $('saveState').textContent !== 'Сохранено') await saveReport();
+  if (!selectedId || currentSnapshot() !== lastSavedSnapshot) await saveReport();
   const data = new FormData();
   data.append('attachment', $('attachmentInput').files[0]);
   const res = await fetch(`api/?action=upload&id=${encodeURIComponent(selectedId)}`, {
@@ -338,7 +366,7 @@ async function runSummary() {
 
 async function exportExcel() {
   clearTimeout(saveTimer);
-  if (!selectedId || $('saveState').textContent !== 'Сохранено') await saveReport();
+  if (!selectedId || currentSnapshot() !== lastSavedSnapshot) await saveReport();
   const result = await api('export', { method: 'POST', body: JSON.stringify({ id: selectedId }) });
   if (result.url) await downloadFile(result.url, `captain-fin-${$('reportDate').value || today()}.xlsx`);
   setStatus('Excel сформирован и отправлен на скачивание.');
@@ -410,6 +438,11 @@ $('loginForm').addEventListener('submit', async (event) => {
 
 document.addEventListener('input', (event) => {
   if (['reportDate', 'openingBalance', 'notes', 'submitted'].includes(event.target.id)) handleEditorInput();
+});
+document.addEventListener('compositionstart', () => { isComposing = true; });
+document.addEventListener('compositionend', () => {
+  isComposing = false;
+  handleEditorInput();
 });
 document.querySelectorAll('[data-add]').forEach((button) => button.addEventListener('click', () => {
   addEntry(button.dataset.add);

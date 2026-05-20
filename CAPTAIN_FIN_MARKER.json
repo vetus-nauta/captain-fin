@@ -1,9 +1,9 @@
 {
   "project": "captain-fin",
-  "version": "2026.05.19-captain-fin-008",
+  "version": "2026.05.20-captain-fin-009",
   "canonical_repo": "git@github.com:vetus-nauta/captain-fin.git",
   "web_path": "https://brkovic.ltd/captain-fin/",
   "local_default_url": "http://127.0.0.1:18787/",
   "drive_folder_id": "1x9m41AUYPocx7H0UezF_lZnFvzWO54zQ",
-  "updated_at": "2026-05-19"
+  "updated_at": "2026-05-20"
 }
